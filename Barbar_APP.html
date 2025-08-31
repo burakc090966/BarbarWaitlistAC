@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="de" data-bs-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pro Friseur Warte‑App</title>
+  <meta name="description" content="Professionelle Wartelisten-App für Friseursalons mit Echtzeit‑Sync, Push-Benachrichtigungen, Analytics & mehr – powered by Firebase" />
+  <link rel="manifest" href="/manifest.json" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet" />
+  <style>
+    :root { --brand:#0d6efd; }
+    body { background:#f8f9fa; transition: background-color .3s, color .3s; }
+    [data-bs-theme="dark"] { background:#1f2937 !important; color:#e5e7eb !important; }
+    [data-bs-theme="dark"] .card { background:#2d3b4e; border-color:#4b5563; }
+    [data-bs-theme="dark"] .list-group-item { background:#374151; border-color:#4b5563; }
+    [data-bs-theme="dark"] .badge-soft { background: rgba(59,130,246,.2); }
+    .container { max-width: 860px; }
+    .card { border-radius: 1rem; box-shadow: 0 6px 20px rgba(0,0,0,.06); }
+    .brand { color: var(--brand); font-weight: 800; letter-spacing:.3px }
+    #count, #admin-count { font-size: 2.6rem; font-weight: 800; color: var(--brand); }
+    .hidden { display:none !important; }
+    .list-group-item { display:flex; align-items:center; justify-content:space-between; gap:.75rem }
+    .badge-soft { background: rgba(13,110,253,.12); color:#0d6efd; }
+    .btn-icon { width:38px; height:38px; display:inline-flex; align-items:center; justify-content:center; border-radius:.65rem }
+    .salon-chip { font-weight:600 }
+    #qrCode { max-width: 200px; margin: 0 auto; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; }
+    .stat-card { padding: 1rem; border-radius: .5rem; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.05); text-align: center; }
+    [data-bs-theme="dark"] .stat-card { background: #374151; }
+    /* Neue Styles für Erweiterungen */
+    #map { height: 200px; margin-top: 1rem; }
+    .payment-section { margin-top: 2rem; }
+  </style>
+</head>
+<body>
+  <div class="container py-4">
+    <header class="d-flex align-items-center justify-content-between mb-3">
+      <div class="d-flex align-items-center gap-2">
+        <i class="fa-solid fa-scissors brand"></i>
+        <span class="brand">Pro Friseur Warte‑App</span>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <button id="themeToggle" class="btn btn-outline-secondary btn-sm"><i class="fa-regular fa-moon"></i></button>
+        <button id="adminEntryBtn" class="btn btn-outline-primary btn-sm">Admin</button>
+      </div>
+    </header>
+
+    <!-- --- PUBLIC / CUSTOMER VIEW --- -->
+    <section id="customer" class="card p-3 p-md-4">
+      <div class="row g-3 align-items-center">
+        <div class="col-md-8">
+          <label class="form-label fw-semibold">Salon wählen</label>
+          <div class="d-flex gap-2">
+            <select id="salonSelect" class="form-select"></select>
+            <span id="salonMeta" class="badge rounded-pill text-bg-light salon-chip"></span>
+          </div>
+        </div>
+        <div class="col-md-4 text-md-end">
+          <div class="small text-muted">Kapazität</div>
+          <div id="count">0 / 10</div>
+        </div>
+      </div>
+
+      <hr/>
+
+      <div class="row g-3">
+        <div class="col-md-6">
+          <h5 class="mb-2">Warteliste</h5>
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <span id="waitlistCount" class="badge badge-soft rounded-pill">0 Personen</span>
+            <button id="toggleCustomerList" class="btn btn-outline-secondary btn-sm">Anzeigen</button>
+          </div>
+          <ul id="customerWaitlist" class="list-group hidden"></ul>
+        </div>
+        <div class="col-md-6">
+          <h5 class="mb-2">Eintragen</h5>
+          <div class="vstack gap-2">
+            <input id="name" class="form-control" placeholder="Dein Name" maxlength="40" />
+            <input id="time" type="time" class="form-control" />
+            <div class="form-check">
+              <input id="pushConsent" type="checkbox" class="form-check-input" />
+              <label class="form-check-label small">Push-Benachrichtigungen aktivieren (z.B. wenn du dran bist)</label>
+            </div>
+            <button id="enqueueBtn" class="btn btn-primary"><i class="fa-solid fa-user-plus me-1"></i>Auf Warteliste</button>
+            <div id="confirm" class="alert alert-success py-2 px-3 hidden"></div>
+          </div>
+          <!-- Neues Feature: Kalender-Integration (Platzhalter für Google Calendar Link) -->
+          <div class="mt-3">
+            <button id="addToCalendarBtn" class="btn btn-outline-info btn-sm"><i class="fa-regular fa-calendar-plus me-1"></i>Zu Kalender hinzufügen</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- --- ADMIN LOGIN --- -->
+    <section id="login" class="card p-3 p-md-4 mt-3 hidden">
+      <h5 class="mb-3">Admin Login</h5>
+      <div class="row g-2">
+        <div class="col-md-5"><input id="email" type="email" class="form-control" placeholder="E‑Mail" /></div>
+        <div class="col-md-5"><input id="password" type="password" class="form-control" placeholder="Passwort" /></div>
+        <div class="col-md-2 d-grid"><button id="loginBtn" class="btn btn-primary">Login</button></div>
+      </div>
+      <div id="loginError" class="text-danger small mt-2"></div>
+    </section>
+
+    <!-- --- ADMIN DASHBOARD --- -->
+    <section id="admin" class="card p-3 p-md-4 mt-3 hidden">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2">
+          <span class="fw-semibold">Aktiver Salon:</span>
+          <select id="adminSalonSelect" class="form-select form-select-sm" style="min-width:220px"></select>
+        </div>
+        <div class="text-end">
+          <div class="small text-muted">Kapazität</div>
+          <div id="admin-count">0 / 10</div>
+        </div>
+      </div>
+
+      <div class="d-flex gap-2 mt-3">
+        <button id="incBtn" class="btn btn-success btn-icon" title="+1"><i class="fa-solid fa-plus"></i></button>
+        <button id="decBtn" class="btn btn-danger btn-icon" title="-1"><i class="fa-solid fa-minus"></i></button>
+        <button id="notifyNextBtn" class="btn btn-info btn-icon" title="Nächsten benachrichtigen"><i class="fa-solid fa-bell"></i></button>
+        <button id="logoutBtn" class="btn btn-outline-secondary ms-auto"><i class="fa-solid fa-arrow-right-from-bracket me-1"></i>Logout</button>
+      </div>
+
+      <hr/>
+
+      <div class="row g-3">
+        <div class="col-md-7">
+          <div class="d-flex align-items-center justify-content-between">
+            <h5 class="mb-2">Warteliste verwalten</h5>
+            <div class="d-flex gap-2">
+              <button id="exportBtn" class="btn btn-secondary btn-sm"><i class="fa-solid fa-file-export"></i> Export CSV</button>
+              <button id="clearBtn" class="btn btn-warning btn-sm"><i class="fa-solid fa-trash"></i> Leeren</button>
+            </div>
+          </div>
+          <ul id="adminWaitlist" class="list-group"></ul>
+        </div>
+        <div class="col-md-5">
+          <h5 class="mb-2">Salon‑Einstellungen</h5>
+          <div class="vstack gap-2">
+            <div class="input-group">
+              <span class="input-group-text">Name</span>
+              <input id="salonName" class="form-control" placeholder="z.B. Friseur XYZ Wien" />
+            </div>
+            <div class="input-group">
+              <span class="input-group-text">Kapazität</span>
+              <input id="capacity" type="number" class="form-control" min="1" max="99" />
+            </div>
+            <div class="input-group">
+              <span class="input-group-text">Min/Kunde</span>
+              <input id="waitPerCustomer" type="number" class="form-control" min="5" max="180" />
+            </div>
+            <div class="input-group">
+              <span class="input-group-text">Adresse (für Maps)</span>
+              <input id="salonAddress" class="form-control" placeholder="z.B. Währinger Str. 10, Wien" />
+            </div>
+            <button id="saveSalonBtn" class="btn btn-primary"><i class="fa-regular fa-floppy-disk me-1"></i>Speichern</button>
+            <button id="createSalonBtn" class="btn btn-outline-primary"><i class="fa-solid fa-plus me-1"></i>Neuen Salon anlegen</button>
+          </div>
+          <div class="small text-muted mt-2">Tipp: Du kannst mehrere Standorte (Wien, Graz, …) anlegen und zwischen ihnen wechseln.</div>
+          <hr/>
+          <h5 class="mb-2">QR-Code für Kunden</h5>
+          <canvas id="qrCode"></canvas>
+          <div class="small text-muted">Teile diesen QR-Code, um Kunden direkt zur App zu führen.</div>
+          <!-- Neues Feature: Maps-Integration -->
+          <div id="map"></div>
+        </div>
+      </div>
+
+      <hr/>
+
+      <h5>Analytics & Stats</h5>
+      <div id="analytics" class="stats-grid">
+        <!-- Dynamisch gefüllt -->
+      </div>
+
+      <!-- Neues Feature: Zahlungsmodul (Platzhalter für Stripe) -->
+      <div class="payment-section">
+        <h5 class="mb-2">Zahlungen verwalten</h5>
+        <button id="initPaymentBtn" class="btn btn-outline-success"><i class="fa-solid fa-credit-card me-1"></i>Bezahlung initiieren</button>
+        <div id="paymentStatus" class="mt-2"></div>
+      </div>
+    </section>
+  </div>
+
+  <script type="module">
+    // --- Firebase SDKs ---
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js';
+    import { getDatabase, ref, child, get, set, update, push, remove, onValue, query, limitToLast, orderByChild } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js';
+    import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
+    import { getAnalytics, logEvent } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-analytics.js';
+    import { getMessaging, getToken, onMessage } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-messaging.js';
+    import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-functions.js';
+
+    // --- Deine Firebase Config ---
+    const firebaseConfig = {
+      apiKey: 'AIzaSyBRwkasgET62TU-pj7w0o-IOSPHFuyVLi8',
+      authDomain: 'barbarwaitlistac.firebaseapp.com',
+      databaseURL: 'https://barbarwaitlistac-default-rtdb.europe-west1.firebasedatabase.app',
+      projectId: 'barbarwaitlistac',
+      storageBucket: 'barbarwaitlistac.appspot.com',
+      messagingSenderId: '648650357386',
+      appId: '1:648650357386:web:77b638c07544c697abcb73',
+      measurementId: 'G-Z81JLFS796'
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const auth = getAuth(app);
+    const analytics = getAnalytics(app);
+    const messaging = getMessaging(app);
+    const functions = getFunctions(app);
+
+    // --- VAPID Key für Push (aus Firebase Console) ---
+    // WICHTIG: Ersetze dies mit deinem echten VAPID-Key aus der Firebase Console (Web Push Certificates)
+    const vapidKey = 'BOnHb-3ujo5Xfu3oV2Rv0R_vWG4aS9APR-ygakSlUZGF6CrDmim8Vu1nHKS6DY2FDW9knGGvKFIGjVcdYMaWBB0'; // Wurde ersetzt!
+
+    // --- DOM Helpers ---
+    const $ = (id) => document.getElementById(id);
+    const show = (el, yes=true) => el.classList[yes? 'remove':'add']('hidden');
+    const fmtMin = (m) => `${m} Min`;
+
+    // --- State ---
+    let currentSalonId = null;
+    let salonsMeta = {};    // cache: salonId -> {name, capacity, waitPerCustomer, address}
+    let waitlist = [];      // [{key, name, time, token?}]
+    let userPushToken = null;
+
+    // --- Refs ---
+    const salonsRef = ref(db, 'salons');
+    const salonMetaRef = ref(db, 'salonMeta');
+    const logsRef = ref(db, 'logs'); // Für erweiterte Analytics
+
+    // --- Init: Lade/abonniere Salons Meta ---
+    onValue(salonMetaRef, (snap) => {
+      salonsMeta = snap.val() || {};
+      if (Object.keys(salonsMeta).length === 0) {
+        const firstId = push(salonMetaRef).key;
+        const defaults = { name: 'Friseur XYZ Wien', capacity: 10, waitPerCustomer: 15, address: '' };
+        set(child(salonMetaRef, firstId), { id: firstId, ...defaults }).then(() => {
+          set(child(salonsRef, firstId), { count: 0, waitTime: defaults.waitPerCustomer });
+        }).catch(err => toast('Fehler beim Anlegen: ' + err.message, true));
+      } else {
+        renderSalonSelect();
+      }
+    });
+
+    // --- Render Salon Auswahl ---
+    function renderSalonSelect() {
+      const optionsHtml = Object.entries(salonsMeta).map(([id, m]) => `<option value="${id}">${m.name}</option>`).join('');
+      $('salonSelect').innerHTML = optionsHtml;
+      $('adminSalonSelect').innerHTML = optionsHtml;
+
+      if (!currentSalonId || !salonsMeta[currentSalonId]) {
+        currentSalonId = Object.keys(salonsMeta)[0];
+      }
+      $('salonSelect').value = currentSalonId;
+      $('adminSalonSelect').value = currentSalonId;
+
+      updateSalonMetaChip();
+      subscribeSalon(currentSalonId);
+      hydrateAdminForm();
+      generateQRCode();
+      initMap(); // Neu: Maps initialisieren
+    }
+
+    // --- Wechsel Salon ---
+    $('salonSelect').addEventListener('change', (e) => switchSalon(e.target.value));
+    $('adminSalonSelect').addEventListener('change', (e) => switchSalon(e.target.value));
+
+    function switchSalon(id) {
+      currentSalonId = id;
+      $('salonSelect').value = id;
+      $('adminSalonSelect').value = id;
+      updateSalonMetaChip();
+      subscribeSalon(id);
+      hydrateAdminForm();
+      generateQRCode();
+      loadAnalytics();
+      initMap(); // Neu: Map aktualisieren
+    }
+
+    function updateSalonMetaChip() {
+      const m = salonsMeta[currentSalonId];
+      if (m) $('salonMeta').textContent = `${m.waitPerCustomer} Min / Kapazität ${m.capacity}`;
+    }
+
+    // --- Abonniere Salon-Daten ---
+    function subscribeSalon(id) {
+      onValue(child(salonsRef, `${id}/count`), (snap) => {
+        const count = snap.val() ?? 0;
+        const cap = salonsMeta[id]?.capacity ?? 10;
+        $('count').textContent = `${count} / ${cap}`;
+        $('admin-count').textContent = `${count} / ${cap}`;
+      });
+
+      onValue(child(salonsRef, `${id}/waitTime`), (snap) => {
+        const wt = snap.val() ?? 15;
+        $('waitPerCustomer').value = wt;
+      });
+
+      onValue(child(salonsRef, `${id}/waitlist`), (snap) => {
+        waitlist = [];
+        snap.forEach(ch => waitlist.push({ key: ch.key, ...ch.val() }));
+        waitlist.sort((a,b) => a.ts - b.ts); // Fix: Nach Timestamp sortieren für korrekte Reihenfolge
+        renderCustomerWaitlist();
+        renderAdminWaitlist();
+        $('waitlistCount').textContent = `${waitlist.length} Personen`;
+      });
+    }
+
+    // --- Customer: Eintragen mit Push ---
+    $('enqueueBtn').addEventListener('click', async () => {
+      const name = $('name').value.trim();
+      const time = $('time').value;
+      if (!name || !time) { toast('Bitte Name und Uhrzeit angeben.', true); return; }
+
+      let token = null;
+      if ($('pushConsent').checked) {
+        token = await enablePush();
+        if (!token) { toast('Push-Aktivierung fehlgeschlagen. Versuche später.', true); return; } // Fix: Abbrechen bei Fehlschlag
+      }
+
+      const entry = { name, time, ts: Date.now(), token };
+      push(child(salonsRef, `${currentSalonId}/waitlist`), entry).then(() => {
+        const pos = waitlist.length + 1;
+        const m = salonsMeta[currentSalonId];
+        $('confirm').innerText = `Angemeldet! Position: ${pos}. Geschätzte Wartezeit: ${pos * (m.waitPerCustomer || 15)} Min.`;
+        show($('confirm'));
+        setTimeout(() => show($('confirm'), false), 4500);
+        $('name').value = ''; $('time').value = '';
+        logEvent(analytics, 'enqueue', { salon: currentSalonId, push: !!token });
+        push(child(logsRef, currentSalonId), { type: 'enqueue', ts: Date.now(), name }); // Erweitert: Log mit Name
+      }).catch(err => toast('Fehler: ' + err.message, true));
+    });
+
+    // --- Neues Feature: Kalender-Integration (einfacher Link zu Google Calendar) ---
+    $('addToCalendarBtn').addEventListener('click', () => {
+      const m = salonsMeta[currentSalonId];
+      if (!m || !$('time').value) { toast('Wähle einen Termin.', true); return; }
+      const eventDate = new Date().toISOString().split('T')[0] + 'T' + $('time').value + ':00';
+      const calUrl = `https://www.google.com/calendar/render?action=TEMPLATE&text=Wartezeit+bei+${encodeURIComponent(m.name)}&dates=${eventDate.replace(/[-:]/g, '')}/${eventDate.replace(/[-:]/g, '')}&details=Dein+Termin+bei+${encodeURIComponent(m.name)}&location=${encodeURIComponent(m.address)}`;
+      window.open(calUrl, '_blank');
+    });
+
+    // --- Push Module ---
+    async function enablePush() {
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') return null;
+        userPushToken = await getToken(messaging, { vapidKey });
+        onMessage(messaging, (payload) => {
+          toast(payload.notification.body);
+        });
+        return userPushToken;
+      } catch (err) {
+        console.error('Push Error:', err);
+        return null;
+      }
+    }
+
+    // --- Admin: Benachrichtige nächsten ---
+    $('notifyNextBtn').addEventListener('click', async () => {
+      if (waitlist.length === 0) { toast('Keine Wartenden.', true); return; }
+      const next = waitlist[0];
+      if (!next.token) { toast('Kein Push-Token für diesen Kunden.', true); return; }
+      
+      // Fix & Erweiterung: Echte FCM-Sendung über Cloud Function (angenommen, du hast eine Function 'sendPushNotification' eingerichtet)
+      const sendNotification = httpsCallable(functions, 'sendPushNotification');
+      try {
+        await sendNotification({ token: next.token, title: 'Du bist dran!', body: 'Komm in den Salon.' });
+        toast('Benachrichtigung gesendet.');
+        logEvent(analytics, 'notify_sent');
+        push(child(logsRef, currentSalonId), { type: 'notify', ts: Date.now(), recipient: next.name });
+      } catch (err) {
+        toast('Fehler beim Senden: ' + err.message, true);
+      }
+    });
+
+    // --- Customer: Liste togglen ---
+    $('toggleCustomerList').addEventListener('click', () => $('customerWaitlist').classList.toggle('hidden'));
+
+    function renderCustomerWaitlist() {
+      const ul = $('customerWaitlist');
+      ul.innerHTML = '';
+      const per = salonsMeta[currentSalonId]?.waitPerCustomer || 15;
+      waitlist.forEach((w, i) => {
+        const li = document.createElement('li');
+        li.className = 'list-group-item';
+        li.innerHTML = `#${i+1} • ${escapeHtml(w.name)} • ${w.time} • ≈ ${fmtMin((i+1)*per)}`; // Fix: Name escapen
+        ul.appendChild(li);
+      });
+    }
+
+    // --- Admin: Zähler ---
+    $('incBtn').addEventListener('click', () => updateCount(1));
+    $('decBtn').addEventListener('click', () => updateCount(-1));
+
+    async function updateCount(change) {
+      get(child(salonsRef, `${currentSalonId}/count`)).then(snap => {
+        const count = (snap.val() ?? 0) + change;
+        const cap = salonsMeta[currentSalonId]?.capacity ?? 10;
+        set(child(salonsRef, `${currentSalonId}/count`), Math.max(0, Math.min(count, cap))).catch(err => toast(err.message, true));
+        logEvent(analytics, `count_${change > 0 ? 'inc' : 'dec'}`);
+        push(child(logsRef, currentSalonId), { type: `count_${change > 0 ? 'inc' : 'dec'}`, ts: Date.now() }); // Erweitert: Log Zähleränderungen
+      });
+    }
+
+    function renderAdminWaitlist() {
+      const ul = $('adminWaitlist');
+      ul.innerHTML = '';
+      const per = salonsMeta[currentSalonId]?.waitPerCustomer || 15;
+      waitlist.forEach((w, i) => {
+        const li = document.createElement('li');
+        li.className = 'list-group-item';
+        li.innerHTML = `
+          <div>
+            <div class="fw-semibold">${escapeHtml(w.name)} <span class="text-muted">um ${w.time || '—'}</span></div>
+            <div class="small text-muted">≈ ${fmtMin((i+1)*per)} ${w.token ? '<i class="fa-solid fa-bell text-success"></i>' : ''}</div>
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-primary" title="Bearbeiten"><i class="fa-regular fa-pen-to-square"></i></button>
+            <button class="btn btn-sm btn-outline-danger" title="Entfernen"><i class="fa-regular fa-trash-can"></i></button>
+          </div>`;
+        const [editBtn, delBtn] = li.querySelectorAll('button');
+        editBtn.onclick = () => editWaitlistItem(w);
+        delBtn.onclick = () => removeWaitlistItem(w.key);
+        ul.appendChild(li);
+      });
+    }
+
+    async function editWaitlistItem(item) {
+      const name = prompt('Neuer Name:', item.name);
+      if (name === null) return;
+      const time = prompt('Neue Uhrzeit (HH:MM):', item.time || '');
+      if (time === null) return;
+      update(child(salonsRef, `${currentSalonId}/waitlist/${item.key}`), { name: name.trim(), time: time.trim() }).catch(err => toast(err.message, true));
+    }
+
+    async function removeWaitlistItem(key) {
+      if (!confirm('Eintrag entfernen?')) return;
+      remove(child(salonsRef, `${currentSalonId}/waitlist/${key}`)).catch(err => toast(err.message, true));
+    }
+
+    $('clearBtn').addEventListener('click', async () => {
+      if (!confirm('Warteliste leeren?')) return;
+      set(child(salonsRef, `${currentSalonId}/waitlist`), null).catch(err => toast(err.message, true));
+    });
+
+    // --- Admin: Salon Einstellungen ---
+    $('saveSalonBtn').addEventListener('click', async () => {
+      const name = $('salonName').value.trim();
+      const capacity = parseInt($('capacity').value) || 10;
+      const waitPerCustomer = parseInt($('waitPerCustomer').value) || 15;
+      const address = $('salonAddress').value.trim();
+      if (!name) { toast('Salon-Name erforderlich.', true); return; } // Fix: Validierung
+      update(child(salonMetaRef, currentSalonId), { name, capacity, waitPerCustomer, address }).then(() => {
+        set(child(salonsRef, `${currentSalonId}/waitTime`), waitPerCustomer);
+        toast('Gespeichert.');
+        generateQRCode();
+        initMap(); // Neu: Map aktualisieren
+      }).catch(err => toast(err.message, true));
+    });
+
+    $('createSalonBtn').addEventListener('click', async () => {
+      const id = push(salonMetaRef).key;
+      const name = prompt('Name:');
+      if (!name) return;
+      const capacity = parseInt(prompt('Kapazität:', '10')) || 10;
+      const waitPerCustomer = parseInt(prompt('Min pro Kunde:', '15')) || 15;
+      const address = prompt('Adresse (für Maps):', '');
+      set(child(salonMetaRef, id), { id, name, capacity, waitPerCustomer, address }).then(() => {
+        set(child(salonsRef, id), { count: 0, waitTime: waitPerCustomer });
+        currentSalonId = id;
+        toast('Angelegt.');
+      }).catch(err => toast(err.message, true));
+    });
+
+    async function hydrateAdminForm() {
+      const m = salonsMeta[currentSalonId];
+      if (m) {
+        $('salonName').value = m.name || '';
+        $('capacity').value = m.capacity || 10;
+        $('waitPerCustomer').value = m.waitPerCustomer || 15;
+        $('salonAddress').value = m.address || '';
+      }
+    }
+
+    // --- Export Module ---
+    $('exportBtn').addEventListener('click', () => {
+      const csv = 'Position,Name,Uhrzeit,Push-Token\n' + waitlist.map((w, i) => `${i+1},${escapeHtml(w.name)},${w.time},${w.token || ''}`).join('\n'); // Erweitert: Mit Token
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `warteliste_${currentSalonId}_${new Date().toISOString().split('T')[0]}.csv`; // Fix: Datum im Filename
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // --- QR-Code Module ---
+    function generateQRCode() {
+      const qr = $('qrCode');
+      qr.innerHTML = '';
+      const m = salonsMeta[currentSalonId];
+      if (m) {
+        new QRCode(qr, {
+          text: `https://barbarwaitlistac.web.app?salon=${currentSalonId}`, // Fix: Ersetzt mit deiner Firebase Hosting-URL
+          width: 200,
+          height: 200,
+          colorDark: '#000000',
+          colorLight: '#ffffff'
+        });
+      }
+    }
+
+    // --- Neues Feature: Maps-Integration mit Google Maps API ---
+    // WICHTIG: Füge deinen Google Maps API-Key in der head hinzu: <script src="https://maps.googleapis.com/maps/api/js?key=DEIN_GOOGLE_MAPS_API_KEY&callback=initMap" async defer></script>
+    window.initMap = function() { // Global für Callback
+      const m = salonsMeta[currentSalonId];
+      if (m && m.address) {
+        const geocoder = new google.maps.Geocoder();
+        geocoder.geocode({ address: m.address }, (results, status) => {
+          if (status === 'OK') {
+            const map = new google.maps.Map($('map'), {
+              center: results[0].geometry.location,
+              zoom: 15
+            });
+            new google.maps.Marker({
+              map: map,
+              position: results[0].geometry.location,
+              title: m.name
+            });
+          } else {
+            $('map').innerHTML = '<p class="text-muted">Karte konnte nicht geladen werden.</p>';
+          }
+        });
+      } else {
+        $('map').innerHTML = '';
+      }
+    };
+
+    // --- Analytics Module (erweitert) ---
+    function loadAnalytics() {
+      const statsDiv = $('analytics');
+      statsDiv.innerHTML = '';
+      const today = new Date().toISOString().split('T')[0];
+      const logQuery = query(child(logsRef, currentSalonId), orderByChild('ts'), limitToLast(500)); // Erhöht: Mehr Logs für bessere Stats
+      get(logQuery).then(snap => {
+        let enqueuesToday = 0, totalWaits = waitlist.length, notifiesToday = 0, avgWaitTime = 0;
+        let enqueues = [];
+        snap.forEach(ch => {
+          const log = ch.val();
+          if (new Date(log.ts).toISOString().split('T')[0] === today) {
+            if (log.type === 'enqueue') enqueuesToday++;
+            if (log.type === 'notify') notifiesToday++;
+          }
+          if (log.type === 'enqueue') enqueues.push(log.ts);
+        });
+        if (enqueues.length > 1) {
+          avgWaitTime = enqueues.reduce((a, b, i, arr) => a + (i > 0 ? (arr[i] - arr[i-1]) / 60000 : 0), 0) / (enqueues.length - 1);
+          avgWaitTime = Math.round(avgWaitTime);
+        }
+        statsDiv.innerHTML = `
+          <div class="stat-card"><h6>Heutige Anmeldungen</h6><p class="fs-4">${enqueuesToday}</p></div>
+          <div class="stat-card"><h6>Aktuelle Wartende</h6><p class="fs-4">${totalWaits}</p></div>
+          <div class="stat-card"><h6>Durchschn. Wartezeit</h6><p class="fs-4">${isNaN(avgWaitTime) ? salonsMeta[currentSalonId]?.waitPerCustomer || 15 : avgWaitTime} Min</p></div>
+          <div class="stat-card"><h6>Heutige Benachrichtigungen</h6><p class="fs-4">${notifiesToday}</p></div>
+        `;
+      }).catch(err => console.error(err));
+    }
+
+    // --- Neues Feature: Zahlungsmodul (Platzhalter für Stripe) ---
+    // WICHTIG: Integriere Stripe.js: <script src="https://js.stripe.com/v3/"></script> in head hinzufügen
+    // Und richte eine Cloud Function 'createPaymentIntent' ein.
+    const stripe = Stripe('pk_test_51S2CJJ6OWvkI3BBOqbFlXDX3Tsf8JcccdFqi5mx3KuKBwQb7aC3yiqYatPFXwUNCxKY4DDj8sZ0QG0lJkpjUTjIG001OEfyGIo'); // Ersetze mit deinem Stripe Public Key
+    $('initPaymentBtn').addEventListener('click', async () => {
+      const amount = prompt('Betrag in Euro (z.B. 20 für 20€):');
+      if (!amount || isNaN(amount)) { toast('Ungültiger Betrag.', true); return; }
+      const createPaymentIntent = httpsCallable(functions, 'createPaymentIntent');
+      try {
+        const { data } = await createPaymentIntent({ amount: parseInt(amount) * 100 }); // In Cent
+        const elements = stripe.elements();
+        const card = elements.create('card');
+        card.mount('#paymentStatus'); // Fix: Mount in DIV
+        const result = await stripe.confirmCardPayment(data.clientSecret, {
+          payment_method: { card }
+        });
+        if (result.error) {
+          toast(result.error.message, true);
+        } else {
+          toast('Zahlung erfolgreich!');
+          push(child(logsRef, currentSalonId), { type: 'payment', ts: Date.now(), amount });
+        }
+      } catch (err) {
+        toast('Fehler: ' + err.message, true);
+      }
+    });
+
+    // --- Auth (erweitert mit Registrierung) ---
+    $('loginBtn').addEventListener('click', async () => {
+      $('loginError').textContent = '';
+      try {
+        await signInWithEmailAndPassword(auth, $('email').value, $('password').value);
+      } catch (e) {
+        if (e.code === 'auth/user-not-found') {
+          if (confirm('Benutzer nicht gefunden. Neu registrieren?')) {
+            try {
+              await createUserWithEmailAndPassword(auth, $('email').value, $('password').value);
+              toast('Registriert und eingeloggt.');
+            } catch (regErr) {
+              $('loginError').textContent = regErr.message;
+            }
+          }
+        } else {
+          $('loginError').textContent = e.message;
+        }
+      }
+    });
+    $('logoutBtn').addEventListener('click', () => signOut(auth).catch(err => toast(err.message, true)));
+
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        show($('login'), false); show($('customer'), false); show($('admin'));
+        hydrateAdminForm();
+        loadAnalytics();
+      } else {
+        show($('admin'), false); show($('login'), false); show($('customer'));
+      }
+    });
+
+    // --- Theme ---
+    $('themeToggle').addEventListener('click', () => {
+      const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+      document.documentElement.setAttribute('data-bs-theme', isDark ? 'light' : 'dark');
+      $('themeToggle').innerHTML = isDark ? '<i class="fa-regular fa-moon"></i>' : '<i class="fa-regular fa-sun"></i>';
+    });
+
+    // --- Utils ---
+    function toast(msg, isErr=false){
+      const div = document.createElement('div');
+      div.className = `toast align-items-center text-bg-${isErr? 'danger' : 'success'} border-0 position-fixed bottom-0 end-0 m-3`;
+      div.role = 'alert';
+      div.innerHTML = `<div class="d-flex"><div class="toast-body">${msg}</div><button type="button" class="btn-close ${isErr? '' : 'btn-close-white'} me-2 m-auto" data-bs-dismiss="toast"></button></div>`;
+      document.body.appendChild(div);
+      const t = new bootstrap.Toast(div, { delay: 2500 });
+      t.show();
+      div.addEventListener('hidden.bs.toast', () => div.remove());
+    }
+    function escapeHtml(s=''){ return s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+    // --- PWA Setup ---
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/firebase-messaging-sw.js').then(reg => console.log('SW registered')).catch(err => console.error(err));
+    }
+
+    // --- Admin Entry Btn: Zeige Login ---
+    $('adminEntryBtn').addEventListener('click', () => {
+      show($('customer'), false);
+      show($('login'));
+    });
+  </script>
+
+  <!-- Zusätzliche Libs -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Neu: Google Maps (ersetze API-Key) -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAWnSMpdTxfAt4K0mFGYqk7f6Wwxh5fWgE" async defer></script>
+  <!-- Neu: Stripe -->
+  <script src="https://js.stripe.com/v3/"></script>
+</body>
+</html>
